@@ -115,76 +115,58 @@ class HandDetector:
             # Count extended fingers
             extended_fingers = []
             finger_count = 0
-              # Check thumb - more robust method to detect if thumb is truly extended
+            
+            # Check thumb - simplified distance-based approach
             thumb_tip = landmarks[HandLandmark.THUMB_TIP]
             thumb_ip = landmarks[HandLandmark.THUMB_IP]
             thumb_mcp = landmarks[HandLandmark.THUMB_MCP]
-            thumb_cmc = landmarks[HandLandmark.THUMB_CMC]
-            index_mcp = landmarks[HandLandmark.INDEX_FINGER_MCP]
+            wrist = landmarks[HandLandmark.WRIST]
             
-            # Calculate distance between thumb tip and index MCP (base of index finger)
-            thumb_index_distance = np.sqrt((thumb_tip[0] - index_mcp[0])**2 + 
-                                          (thumb_tip[1] - index_mcp[1])**2)
+            # Calculate distance from thumb tip to wrist (extended thumb)
+            thumb_tip_wrist_dist = np.sqrt((thumb_tip[0] - wrist[0])**2 + 
+                                           (thumb_tip[1] - wrist[1])**2)
             
-            # Calculate distance between thumb MCP and index MCP as reference
-            mcp_distance = np.sqrt((thumb_mcp[0] - index_mcp[0])**2 + 
-                                  (thumb_mcp[1] - index_mcp[1])**2)
+            # Calculate distance from thumb IP to wrist (bent thumb reference)
+            thumb_ip_wrist_dist = np.sqrt((thumb_ip[0] - wrist[0])**2 + 
+                                          (thumb_ip[1] - wrist[1])**2)
             
-            # Calculate angle between thumb segments
-            # Vector from CMC to MCP
-            v1 = (thumb_mcp[0] - thumb_cmc[0], thumb_mcp[1] - thumb_cmc[1])
-            # Vector from MCP to IP
-            v2 = (thumb_ip[0] - thumb_mcp[0], thumb_ip[1] - thumb_mcp[1])
-            # Vector from IP to TIP
-            v3 = (thumb_tip[0] - thumb_ip[0], thumb_tip[1] - thumb_ip[1])
-            
-            # Normalize vectors
-            v1_norm = np.sqrt(v1[0]**2 + v1[1]**2)
-            v2_norm = np.sqrt(v2[0]**2 + v2[1]**2)
-            v3_norm = np.sqrt(v3[0]**2 + v3[1]**2)
-            
-            if v1_norm == 0 or v2_norm == 0 or v3_norm == 0:
-                # Avoid division by zero
-                thumb_extended = False
-            else:
-                # Calculate dot products
-                dot1 = (v1[0] * v2[0] + v1[1] * v2[1]) / (v1_norm * v2_norm)
-                dot2 = (v2[0] * v3[0] + v2[1] * v3[1]) / (v2_norm * v3_norm)
-                
-                # Calculate angles in radians
-                angle1 = np.arccos(np.clip(dot1, -1.0, 1.0))
-                angle2 = np.arccos(np.clip(dot2, -1.0, 1.0))
-                
-                # Convert to degrees
-                angle1_deg = np.degrees(angle1)
-                angle2_deg = np.degrees(angle2)
-                
-                # Combined criteria for thumb extension:
-                # 1. Distance from thumb tip to index MCP is significant compared to MCP distance
-                # 2. Angles between thumb segments indicate an extended position
-                # 3. Directional check (left/right hand specific)
-                distance_criterion = thumb_index_distance > mcp_distance * 0.7
-                angle_criterion = (angle1_deg > 20 or angle2_deg > 30)
-                direction_criterion = ((handedness == "Left" and thumb_tip[0] < index_mcp[0]) or 
-                                      (handedness == "Right" and thumb_tip[0] > index_mcp[0]))
-                
-                thumb_extended = distance_criterion and angle_criterion and direction_criterion
+            # Thumb is extended if tip is farther from wrist than IP joint
+            # This works regardless of hand orientation
+            thumb_extended = thumb_tip_wrist_dist > thumb_ip_wrist_dist * 1.1
             
             if thumb_extended:
                 extended_fingers.append("Thumb")
                 finger_count += 1
             
-            # Check fingers (index, middle, ring, pinky)
-            finger_tips = [HandLandmark.INDEX_FINGER_TIP, HandLandmark.MIDDLE_FINGER_TIP, 
-                           HandLandmark.RING_FINGER_TIP, HandLandmark.PINKY_TIP]
-            finger_pips = [HandLandmark.INDEX_FINGER_PIP, HandLandmark.MIDDLE_FINGER_PIP,
-                          HandLandmark.RING_FINGER_PIP, HandLandmark.PINKY_PIP]
-            finger_names = ["Index", "Middle", "Ring", "Pinky"]
+            # Check fingers (index, middle, ring, pinky) using sequential joint distances
+            # Each finger has 4 landmarks: MCP (base) -> PIP -> DIP -> TIP
+            finger_data = [
+                (HandLandmark.INDEX_FINGER_MCP, HandLandmark.INDEX_FINGER_PIP, 
+                 HandLandmark.INDEX_FINGER_DIP, HandLandmark.INDEX_FINGER_TIP, "Index"),
+                (HandLandmark.MIDDLE_FINGER_MCP, HandLandmark.MIDDLE_FINGER_PIP, 
+                 HandLandmark.MIDDLE_FINGER_DIP, HandLandmark.MIDDLE_FINGER_TIP, "Middle"),
+                (HandLandmark.RING_FINGER_MCP, HandLandmark.RING_FINGER_PIP, 
+                 HandLandmark.RING_FINGER_DIP, HandLandmark.RING_FINGER_TIP, "Ring"),
+                (HandLandmark.PINKY_MCP, HandLandmark.PINKY_PIP, 
+                 HandLandmark.PINKY_DIP, HandLandmark.PINKY_TIP, "Pinky")
+            ]
             
-            # Compare y-coordinate of fingertip with PIP joint
-            # If fingertip is higher (smaller y) than PIP joint, finger is extended
-            for i, (tip_idx, pip_idx, name) in enumerate(zip(finger_tips, finger_pips, finger_names)):
-                if landmarks[tip_idx][1] < landmarks[pip_idx][1]:
+            # For each finger, check if joints are progressively farther from wrist (extended)
+            # This prevents false positives when fist is balled up
+            for mcp_idx, pip_idx, dip_idx, tip_idx, name in finger_data:
+                # Calculate distances from wrist to each joint
+                mcp = landmarks[mcp_idx]
+                pip = landmarks[pip_idx]
+                dip = landmarks[dip_idx]
+                tip = landmarks[tip_idx]
+                
+                pip_dist = np.sqrt((pip[0] - wrist[0])**2 + (pip[1] - wrist[1])**2)
+                dip_dist = np.sqrt((dip[0] - wrist[0])**2 + (dip[1] - wrist[1])**2)
+                tip_dist = np.sqrt((tip[0] - wrist[0])**2 + (tip[1] - wrist[1])**2)
+                
+                # Finger is extended if each joint is progressively farther from wrist
+                # Allow small tolerance for measurement noise
+                if (dip_dist > pip_dist * 0.95) and (tip_dist > dip_dist * 0.95):
                     extended_fingers.append(name)
                     finger_count += 1
             
