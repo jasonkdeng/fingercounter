@@ -104,6 +104,11 @@ class HandDetector:
         for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
             # Get hand classification (Left/Right)
             handedness = results.multi_handedness[idx].classification[0].label if results.multi_handedness else "Unknown"
+            # Swap Left/Right due to mirrored camera
+            if handedness == "Left":
+                handedness = "Right"
+            elif handedness == "Right":
+                handedness = "Left"
             
             # Extract landmark coordinates
             landmarks = []
