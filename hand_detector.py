@@ -211,6 +211,24 @@ class HandDetector:
             finger_count = hand['finger_count']
             extended_fingers = hand['extended_fingers']
             landmarks = hand['landmarks']
+
+            def draw_transparent_rect(img, top_left, bottom_right, color, alpha=0.35):
+                x1, y1 = top_left
+                x2, y2 = bottom_right
+
+                h, w = img.shape[:2]
+                x1 = max(0, min(w, x1))
+                x2 = max(0, min(w, x2))
+                y1 = max(0, min(h, y1))
+                y2 = max(0, min(h, y2))
+
+                if x2 <= x1 or y2 <= y1:
+                    return
+
+                roi = img[y1:y2, x1:x2]
+                overlay = roi.copy()
+                cv2.rectangle(overlay, (0, 0), (x2 - x1, y2 - y1), color, -1)
+                img[y1:y2, x1:x2] = cv2.addWeighted(overlay, alpha, roi, 1 - alpha, 0)
             
             # Draw a text box for finger count
             wrist = landmarks[HandLandmark.WRIST]
@@ -222,10 +240,13 @@ class HandDetector:
             # Draw text background
             text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
             text_w, text_h = text_size
-            cv2.rectangle(result_image, 
-                          (text_pos[0] - 5, text_pos[1] - text_h - 5),
-                          (text_pos[0] + text_w + 5, text_pos[1] + 5),
-                          (50, 50, 50), -1)
+            draw_transparent_rect(
+                result_image,
+                (text_pos[0] - 5, text_pos[1] - text_h - 5),
+                (text_pos[0] + text_w + 5, text_pos[1] + 5),
+                (50, 50, 50),
+                alpha=0.35
+            )
             
             # Draw text
             cv2.putText(result_image, text, text_pos, 
@@ -238,10 +259,13 @@ class HandDetector:
             # Draw text background
             finger_text_size, _ = cv2.getTextSize(finger_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             finger_text_w, finger_text_h = finger_text_size
-            cv2.rectangle(result_image, 
-                          (finger_text_pos[0] - 5, finger_text_pos[1] - finger_text_h - 5),
-                          (finger_text_pos[0] + finger_text_w + 5, finger_text_pos[1] + 5),
-                          (50, 50, 50), -1)
+            draw_transparent_rect(
+                result_image,
+                (finger_text_pos[0] - 5, finger_text_pos[1] - finger_text_h - 5),
+                (finger_text_pos[0] + finger_text_w + 5, finger_text_pos[1] + 5),
+                (50, 50, 50),
+                alpha=0.35
+            )
             
             # Draw text
             cv2.putText(result_image, finger_text, finger_text_pos, 
